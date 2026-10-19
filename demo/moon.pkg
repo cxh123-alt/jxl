@@ -1,0 +1,5 @@
+import {
+  "jxl-moonbit/jxl" @jxl,
+}
+
+pkgtype(kind: "executable")
