@@ -1,4 +1,4 @@
-# jxl-moonbit/jxl
+# cxh123-alt/jxl
 
 A pure-MoonBit, zero-dependency JPEG XL (ISO/IEC 18181) decoder.
 
@@ -34,7 +34,7 @@ Sample reconstruction (Modular lossless and VarDCT) is in progress; see
 ## Install
 
 ```
-moon add jxl-moonbit/jxl
+moon add cxh123-alt/jxl
 ```
 
 ## Usage
@@ -62,12 +62,12 @@ moon run demo
 
 | Package | Purpose |
 | --- | --- |
-| `jxl-moonbit/jxl` | Public entry points (`info`, `summary`) |
-| `jxl-moonbit/jxl/src/error` | Error type |
-| `jxl-moonbit/jxl/src/bitio` | LSB-first bit reader |
-| `jxl-moonbit/jxl/src/field` | Bundle field codecs |
-| `jxl-moonbit/jxl/src/codestream` | Container, size, color, metadata, parse |
-| `jxl-moonbit/jxl/src/entropy` | rANS/Huffman tables, histogram, hybrid uint |
+| `cxh123-alt/jxl` | Public entry points (`info`, `summary`) |
+| `cxh123-alt/jxl/src/error` | Error type |
+| `cxh123-alt/jxl/src/bitio` | LSB-first bit reader |
+| `cxh123-alt/jxl/src/field` | Bundle field codecs |
+| `cxh123-alt/jxl/src/codestream` | Container, size, color, metadata, parse |
+| `cxh123-alt/jxl/src/entropy` | rANS/Huffman tables, histogram, hybrid uint |
 
 ## Roadmap
 

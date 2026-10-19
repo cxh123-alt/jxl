@@ -1,5 +1,5 @@
 import {
-  "jxl-moonbit/jxl/src/error" @error,
-  "jxl-moonbit/jxl/src/bitio" @bitio,
-  "jxl-moonbit/jxl/src/field" @field,
+  "cxh123-alt/jxl/src/error" @error,
+  "cxh123-alt/jxl/src/bitio" @bitio,
+  "cxh123-alt/jxl/src/field" @field,
 }

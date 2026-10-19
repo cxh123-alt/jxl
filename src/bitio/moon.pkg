@@ -1,3 +1,3 @@
 import {
-  "jxl-moonbit/jxl/src/error" @error,
+  "cxh123-alt/jxl/src/error" @error,
 }

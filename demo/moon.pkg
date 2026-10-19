@@ -1,5 +1,5 @@
 import {
-  "jxl-moonbit/jxl" @jxl,
+  "cxh123-alt/jxl" @jxl,
 }
 
 pkgtype(kind: "executable")

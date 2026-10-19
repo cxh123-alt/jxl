@@ -1,10 +1,10 @@
-name = "jxl-moonbit/jxl"
+name = "cxh123-alt/jxl"
 
 version = "0.1.0"
 
 readme = "README.md"
 
-repository = "https://github.com/jxl-moonbit/jxl"
+repository = "https://github.com/cxh123-alt/jxl"
 
 license = "Apache-2.0"
 
