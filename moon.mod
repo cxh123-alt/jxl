@@ -23,4 +23,4 @@ keywords = [
 
 preferred_target = "wasm"
 
-description = "Pure-MoonBit JPEG XL (ISO/IEC 18181) decoder: parses the codestream and container, decodes image headers, and decodes pixel data with no native dependencies."
+description = "Pure-MoonBit JPEG XL (ISO/IEC 18181) decoder: parses the codestream and container, decodes image headers and the entropy layer (rANS/Huffman), with no native dependencies."
