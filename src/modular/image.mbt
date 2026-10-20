@@ -37,7 +37,7 @@ pub fn Channel::shrink(self : Channel, new_w : Int, new_h : Int) -> Channel {
 /// A collection of channels and the transforms that produced their current
 /// shape (which must be undone in reverse order to recover the image).
 pub struct Image {
-  mut channel : Array[Channel]
+  channel : Array[Channel]
   mut transform : Array[Transform]
   w : Int
   h : Int
@@ -66,9 +66,4 @@ pub fn Image::new(w : Int, h : Int, bitdepth : Int, nb_chans : Int) -> Image {
 /// Number of channels currently present.
 pub fn Image::num_channels(self : Image) -> Int {
   self.channel.length()
-}
-
-/// Replace the channel list with `new_channels` (used by transform undo).
-fn Image::set_channels(self : Image, new_channels : Array[Channel]) -> Unit {
-  self.channel = new_channels
 }

@@ -127,7 +127,7 @@ fn max0(x : Int) -> Int {
 // --- RCT ----------------------------------------------------------------------
 
 /// Undo an RCT (reversible color transform) step starting at channel `begin_c`.
-pub fn inv_rct(image : Image, begin_c : Int, rct_type : Int) -> Unit raise @error.JxlError {
+pub fn inv_rct(image : Image, begin_c : Int, rct_type : Int) -> Unit {
   let m = begin_c
   if rct_type == 0 {
     return
@@ -201,7 +201,7 @@ pub fn meta_palette(
   end_c : Int,
   nb_colors : Int,
   nb_deltas : Int
-) -> Unit raise @error.JxlError {
+) -> Unit {
   let nb = end_c - begin_c + 1
   if begin_c >= image.nb_meta_channels {
     image.nb_meta_channels = image.nb_meta_channels + 1
@@ -223,10 +223,10 @@ pub fn meta_palette(
 pub fn inv_palette(
   image : Image,
   begin_c : Int,
-  nb_colors : Int,
+  _nb_colors : Int,
   nb_deltas : Int,
   predictor : Int,
-  wp_header : WeightedHeader
+  _wp_header : WeightedHeader
 ) -> Unit raise @error.JxlError {
   if image.nb_meta_channels < 1 {
     raise @error.JxlError::InvalidValue("palette transform without palette")
@@ -382,7 +382,7 @@ fn inv_v_squeeze(image : Image, c : Int, rc : Int) -> Unit {
 
 /// Undo a squeeze transform (`InvSqueeze`): reverse each squeeze step and drop
 /// the residual channels.
-pub fn inv_squeeze(image : Image, params : Array[SqueezeParams]) -> Unit raise @error.JxlError {
+pub fn inv_squeeze(image : Image, params : Array[SqueezeParams]) -> Unit {
   let mut i = params.length() - 1
   while i >= 0 {
     let p = params[i]
@@ -451,7 +451,7 @@ fn default_squeeze_parameters(image : Image) -> Array[SqueezeParams] {
 
 /// Apply a squeeze transform's structural change (`MetaSqueeze`): halve each
 /// affected channel and insert a residual channel per step.
-pub fn meta_squeeze(image : Image, params_in : Array[SqueezeParams]) -> Unit raise @error.JxlError {
+pub fn meta_squeeze(image : Image, params_in : Array[SqueezeParams]) -> Unit {
   let params = if params_in.length() == 0 {
     default_squeeze_parameters(image)
   } else {
