@@ -110,6 +110,11 @@ fn make_uint_array(size : Int, value : UInt) -> Array[UInt] {
   a
 }
 
+/// True when this code uses prefix (Huffman) coding rather than rANS.
+pub fn ANSCode::uses_prefix_code(self : ANSCode) -> Bool {
+  self.use_prefix_code
+}
+
 /// Create a symbol reader over `code`. `initial_state` is the 32-bit rANS state
 /// read from the stream (ignored for prefix coding). `distance_multiplier` is a
 /// frame-level scale for the LZ77 special distances (0 disables them).
@@ -255,7 +260,8 @@ pub fn read_ans_codes(
   max_alphabet_size : Int,
   use_prefix_code : Bool,
   log_alpha_size : Int,
-  uint_config : Array[HybridUintConfig]
+  uint_config : Array[HybridUintConfig],
+  lz77 : LZ77Params
 ) -> ANSCode raise @error.JxlError {
   if use_prefix_code {
     if max_alphabet_size > (1 << PREFIX_MAX_BITS) {
@@ -288,7 +294,7 @@ pub fn read_ans_codes(
       }
       c = c + 1
     }
-    return ANSCode::new([], huffman_data, uint_config, true, log_alpha_size, LZ77Params::disabled())
+    return ANSCode::new([], huffman_data, uint_config, true, log_alpha_size, lz77)
   }
   if max_alphabet_size > ANS_MAX_ALPHABET_SIZE {
     raise @error.JxlError::InvalidValue("ans alphabet too large")
@@ -303,5 +309,211 @@ pub fn read_ans_codes(
     alias_tables.push(init_alias_table(counts, ANS_LOG_TAB_SIZE, log_alpha_size))
     c = c + 1
   }
-  ANSCode::new(alias_tables, [], uint_config, false, log_alpha_size, LZ77Params::disabled())
+  ANSCode::new(alias_tables, [], uint_config, false, log_alpha_size, lz77)
+}
+
+/// Read the LZ77 parameters bundle (`LZ77Params::VisitFields`): an enabled
+/// flag and, when enabled, the minimum symbol and minimum copy length.
+pub fn read_lz77_params(reader : @bitio.BitReader) -> LZ77Params raise @error.JxlError {
+  let enabled = @field.read_bool(reader)
+  if !enabled {
+    return LZ77Params::disabled()
+  }
+  let min_symbol = @field.read_u32(
+    reader,
+    @field.val(224U),
+    @field.val(512U),
+    @field.val(4096U),
+    @field.bits_offset(15U, 8U)
+  )
+  let min_length = @field.read_u32(
+    reader,
+    @field.val(3U),
+    @field.val(4U),
+    @field.bits_offset(2U, 5U),
+    @field.bits_offset(8U, 9U)
+  )
+  {
+    enabled: true,
+    min_symbol: min_symbol,
+    min_length: min_length,
+    length_uint_config: HybridUintConfig::new(0U, 0U, 0U),
+    distance_context: 0,
+  }
+}
+
+/// Inverse move-to-front: `v[i] = mtf[v[i]]`, promoting the referenced value to
+/// the front of `mtf` after each step (`InverseMoveToFrontTransform`).
+fn inverse_mtf(v : Array[Int]) -> Unit {
+  let mtf : Array[Int] = []
+  let mut i = 0
+  while i < 256 {
+    mtf.push(i)
+    i = i + 1
+  }
+  let mut j = 0
+  while j < v.length() {
+    let index = v[j]
+    let value = mtf[index]
+    v[j] = value
+    if index != 0 {
+      let mut k = index
+      while k > 0 {
+        mtf[k] = mtf[k - 1]
+        k = k - 1
+      }
+      mtf[0] = value
+    }
+    j = j + 1
+  }
+}
+
+/// Read a context map of `num_contexts` entries and return the histogram index
+/// each context maps to, plus the resulting number of histograms
+/// (`DecodeContextMap`). The non-simple path decodes its own single-context
+/// entropy tables (with LZ77 disallowed for tiny maps) and applies the inverse
+/// move-to-front transform when requested.
+pub fn decode_context_map(
+  reader : @bitio.BitReader,
+  num_contexts : Int
+) -> (Array[Int], Int) raise @error.JxlError {
+  let context_map : Array[Int] = []
+  let mut i = 0
+  while i < num_contexts {
+    context_map.push(0)
+    i = i + 1
+  }
+  let is_simple = @field.read_bool(reader)
+  if is_simple {
+    let bits_per_entry = reader.read_bits(2).reinterpret_as_int()
+    if bits_per_entry != 0 {
+      let mut j = 0
+      while j < num_contexts {
+        context_map[j] = reader.read_bits(bits_per_entry).reinterpret_as_int()
+        j = j + 1
+      }
+    }
+  } else {
+    let use_mtf = @field.read_bool(reader)
+    let disallow_lz77 = num_contexts <= 2
+    let (code, sink_ctx_map) = decode_histograms(reader, 1, disallow_lz77)
+    let initial_state = if code.use_prefix_code { 0U } else { reader.read_bits(32) }
+    let ans_reader = ANSSymbolReader::new(code, initial_state, 0)
+    let clustered = sink_ctx_map[0]
+    let mut maxsym = 0
+    let mut j = 0
+    while j < num_contexts {
+      let sym = ans_reader.read_hybrid_uint_clustered(clustered, reader).reinterpret_as_int()
+      if sym > maxsym {
+        maxsym = sym
+      }
+      context_map[j] = sym
+      j = j + 1
+    }
+    if maxsym >= 256 {
+      raise @error.JxlError::InvalidValue("invalid context map cluster id")
+    }
+    if !ans_reader.check_ans_final_state() {
+      raise @error.JxlError::InvalidValue("invalid context map")
+    }
+    if use_mtf {
+      inverse_mtf(context_map)
+    }
+  }
+  // Number of histograms is one past the largest mapped index, and every index
+  // must be used at least once.
+  let mut num_htrees = 0
+  let mut j = 0
+  while j < num_contexts {
+    if context_map[j] > num_htrees {
+      num_htrees = context_map[j]
+    }
+    j = j + 1
+  }
+  num_htrees = num_htrees + 1
+  let have : Array[Bool] = []
+  let mut k = 0
+  while k < num_htrees {
+    have.push(false)
+    k = k + 1
+  }
+  let mut found = 0
+  let mut j2 = 0
+  while j2 < num_contexts {
+    let h = context_map[j2]
+    if h >= num_htrees {
+      raise @error.JxlError::InvalidValue("context map index out of range")
+    }
+    if !have[h] {
+      have[h] = true
+      found = found + 1
+    }
+    j2 = j2 + 1
+  }
+  if found != num_htrees {
+    raise @error.JxlError::InvalidValue("incomplete context map")
+  }
+  (context_map, num_htrees)
+}
+
+/// Decode the full set of entropy tables for `num_contexts` contexts
+/// (`DecodeHistograms`): the LZ77 parameters, the optional context map, the
+/// prefix-code flag, the log alphabet size, the hybrid-uint configurations, and
+/// finally the per-histogram tables. Returns the assembled code and the
+/// context→histogram mapping.
+pub fn decode_histograms(
+  reader : @bitio.BitReader,
+  num_contexts : Int,
+  disallow_lz77 : Bool
+) -> (ANSCode, Array[Int]) raise @error.JxlError {
+  let lz77 = read_lz77_params(reader)
+  let mut num_contexts_total = num_contexts
+  if lz77.enabled {
+    num_contexts_total = num_contexts_total + 1
+  }
+  if lz77.enabled && disallow_lz77 {
+    raise @error.JxlError::InvalidValue("LZ77 used where disallowed")
+  }
+  // The LZ77 length code has its own hybrid-uint config (log_alpha_size = 8).
+  let mut length_uint_config = HybridUintConfig::new(0U, 0U, 0U)
+  if lz77.enabled {
+    length_uint_config = read_uint_config(reader, 8U)
+  }
+  let mut num_histograms = 1
+  let mut context_map : Array[Int] = []
+  let mut i = 0
+  while i < num_contexts_total {
+    context_map.push(0)
+    i = i + 1
+  }
+  if num_contexts_total > 1 {
+    let (cm, nh) = decode_context_map(reader, num_contexts_total)
+    context_map = cm
+    num_histograms = nh
+  }
+  let distance_context = context_map[num_contexts_total - 1]
+  let use_prefix_code = @field.read_bool(reader)
+  let log_alpha_size = if use_prefix_code {
+    PREFIX_MAX_BITS
+  } else {
+    reader.read_bits(2).reinterpret_as_int() + 5
+  }
+  let uint_config = read_uint_configs(reader, log_alpha_size.reinterpret_as_uint(), num_histograms)
+  let max_alphabet_size = 1 << log_alpha_size
+  let code = read_ans_codes(
+    reader,
+    num_histograms,
+    max_alphabet_size,
+    use_prefix_code,
+    log_alpha_size,
+    uint_config,
+    {
+      enabled: lz77.enabled,
+      min_symbol: lz77.min_symbol,
+      min_length: lz77.min_length,
+      length_uint_config: length_uint_config,
+      distance_context: distance_context,
+    }
+  )
+  (code, context_map)
 }

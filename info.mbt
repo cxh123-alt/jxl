@@ -44,3 +44,10 @@ pub fn summary(data : Bytes) -> String raise @error.JxlError {
   let i = info(data)
   "JPEG XL \{i.width}x\{i.height}, \{i.bits}-bit \{i.color_space_name}, \{i.extra_channels} extra channel(s), \{i.container_label}"
 }
+
+/// Decode a lossless Modular JPEG XL file (naked codestream or container) into
+/// flat 8-bit RGBA. Only single-group, single-pass, direct-RGB/grayscale
+/// frames are supported; anything else raises `InvalidValue`.
+pub fn decode(data : Bytes) -> @modular.RgbaImage raise @error.JxlError {
+  @modular.decode_codestream(@codestream.codestream(data))
+}

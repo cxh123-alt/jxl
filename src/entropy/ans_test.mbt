@@ -113,6 +113,62 @@ test "read_hybrid_uint_clustered decodes beyond the split token" {
   assert_true(reader.read_hybrid_uint_clustered(0, @bitio.BitReader::new(w.finish())) == 5U)
 }
 
+test "read_lz77_params reads a disabled then an enabled bundle" {
+  let w = BitWriter::new()
+  w.write_bits(0U, 1) // enabled = 0
+  let off = read_lz77_params(@bitio.BitReader::new(w.finish()))
+  assert_false(off.enabled)
+  assert_eq(off.min_symbol, 0U)
+
+  let w2 = BitWriter::new()
+  w2.write_bits(1U, 1) // enabled = 1
+  w2.write_bits(0U, 2) // min_symbol: Val(224)
+  w2.write_bits(0U, 2) // min_length: Val(3)
+  let on = read_lz77_params(@bitio.BitReader::new(w2.finish()))
+  assert_true(on.enabled)
+  assert_eq(on.min_symbol, 224U)
+  assert_eq(on.min_length, 3U)
+}
+
+test "decode_context_map reads a simple two-histogram map" {
+  let w = BitWriter::new()
+  w.write_bits(1U, 1) // is_simple = 1
+  w.write_bits(2U, 2) // bits_per_entry = 2
+  w.write_bits(0U, 2)
+  w.write_bits(1U, 2)
+  w.write_bits(0U, 2)
+  w.write_bits(1U, 2)
+  let (map, num_htrees) = decode_context_map(@bitio.BitReader::new(w.finish()), 4)
+  assert_eq(map.length(), 4)
+  assert_eq(map[0], 0)
+  assert_eq(map[1], 1)
+  assert_eq(map[2], 0)
+  assert_eq(map[3], 1)
+  assert_eq(num_htrees, 2)
+}
+
+test "decode_histograms reads a single-context rANS code" {
+  let w = BitWriter::new()
+  w.write_bits(0U, 1) // lz77 disabled
+  w.write_bits(0U, 1) // use_prefix_code = 0
+  w.write_bits(3U, 2) // log_alpha_size = 3 + 5 = 8
+  w.write_bits(8U, 4) // split_exponent = 8 (== log_alpha_size)
+  w.write_bits(1U, 1) // simple histogram
+  w.write_bits(1U, 1) // two symbols
+  w.write_bits(0U, 1) // symbol 0 = 0
+  w.write_bits(1U, 1) // symbol 1: var-len
+  w.write_bits(0U, 3) // nbits = 0 -> value 1
+  w.write_bits(1024U, 12) // counts[0] = 1024
+  let (code, map) = decode_histograms(@bitio.BitReader::new(w.finish()), 1, false)
+  assert_false(code.use_prefix_code)
+  assert_eq(code.log_alpha_size, 8)
+  assert_eq(code.uint_config.length(), 1)
+  assert_eq(code.uint_config[0].split_exponent, 8U)
+  assert_eq(map.length(), 1)
+  assert_eq(map[0], 0)
+  assert_eq(code.alias_tables.length(), 1)
+}
+
 test "read_ans_codes reads an rANS histogram" {
   let w = BitWriter::new()
   w.write_bits(1U, 1) // simple histogram
@@ -128,6 +184,7 @@ test "read_ans_codes reads an rANS histogram" {
     false,
     8,
     [HybridUintConfig::new(4U, 2U, 0U)],
+    LZ77Params::disabled(),
   )
   let table = code.alias_tables[0]
   // The alias table does not map states contiguously by symbol, so verify the

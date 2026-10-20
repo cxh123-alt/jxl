@@ -28,8 +28,9 @@ JavaScript, and WebAssembly.
   flat, and log-count representations), the hybrid-uint config reader, and the
   per-context entropy-code table reader (`DecodeANSCodes`).
 
-Sample reconstruction (Modular lossless and VarDCT) is in progress; see
-[Roadmap](#roadmap).
+Lossless Modular sample reconstruction (single-group, single-pass frames) is
+implemented: `decode` turns a lossless Modular `.jxl` into flat 8-bit RGBA.
+VarDCT (lossy) reconstruction is not yet supported; see [Roadmap](#roadmap).
 
 ## Install
 
@@ -52,6 +53,19 @@ println(line)  // e.g. "JPEG XL 512x256, 8-bit RGB, 0 extra channel(s), containe
 
 `info` and `summary` accept either a raw codestream or a boxed container.
 
+To reconstruct pixels from a lossless Modular file:
+
+```moonbit
+let image = @jxl.decode(bytes)
+println(image.width)   // image width in pixels
+println(image.height)  // image height in pixels
+// image.rgba is a flat, row-major `Array[Int]` of `width * height * 4`
+// 8-bit RGBA samples.
+```
+
+`decode` supports single-group, single-pass, direct-RGB/grayscale lossless
+Modular frames; anything else raises `InvalidValue`.
+
 A runnable demo that decodes several embedded streams is included:
 
 ```
@@ -62,18 +76,19 @@ moon run demo
 
 | Package | Purpose |
 | --- | --- |
-| `cxh123-alt/jxl` | Public entry points (`info`, `summary`) |
+| `cxh123-alt/jxl` | Public entry points (`info`, `summary`, `decode`) |
 | `cxh123-alt/jxl/src/error` | Error type |
 | `cxh123-alt/jxl/src/bitio` | LSB-first bit reader |
 | `cxh123-alt/jxl/src/field` | Bundle field codecs |
 | `cxh123-alt/jxl/src/codestream` | Container, size, color, metadata, parse |
 | `cxh123-alt/jxl/src/entropy` | rANS/Huffman tables, histogram, hybrid uint |
+| `cxh123-alt/jxl/src/frame` | Frame header, dimensions, TOC |
+| `cxh123-alt/jxl/src/modular` | MA tree, channel decode, inverse transforms, RGBA |
 
 ## Roadmap
 
-- Modular (lossless) channel decoding.
 - VarDCT (lossy) transform decoding.
-- Sample reconstruction to RGBA.
+- Multi-group and multi-pass Modular frames.
 
 ## License
 

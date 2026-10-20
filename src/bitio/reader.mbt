@@ -101,9 +101,11 @@ pub fn BitReader::peek_bits(self : BitReader, n : Int) -> UInt raise @error.JxlE
     return 0U
   }
   self.refill()
-  if self.bits_in_buf < n {
-    raise @error.JxlError::Truncated
-  }
+  // Like libjxl's `PeekBits`, peeking may look past the end of the stream:
+  // Huffman decoding peeks a full table's worth of bits even for the final,
+  // short symbols, and the missing bits are zero (the stream is zero-padded to
+  // a byte boundary). The high bits of `buf` are always zero, so the mask
+  // naturally zero-pads. Genuine truncation is still caught by `read_bits`.
   let mask : UInt64 = (1UL << n) - 1UL
   (self.buf & mask).to_uint()
 }

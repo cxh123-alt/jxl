@@ -36,6 +36,7 @@ pub struct Metadata {
   intrinsic_size : Size
   preview_size : Size
   have_preview : Bool
+  have_animation : Bool
   animation : Animation
   bit_depth : BitDepth
   modular_16 : Bool
@@ -80,6 +81,7 @@ pub fn default_metadata() -> Metadata {
     intrinsic_size: { width: 0U, height: 0U },
     preview_size: { width: 0U, height: 0U },
     have_preview: false,
+    have_animation: false,
     animation: default_animation(),
     bit_depth: default_bit_depth(),
     modular_16: true,
@@ -240,6 +242,54 @@ fn read_tone_mapping(reader : @bitio.BitReader) -> ToneMapping raise @error.JxlE
   }
 }
 
+/// Read the `CustomTransformData` bundle (`CodecMetadata::transform_data`),
+/// which immediately follows `ImageMetadata` and precedes the byte boundary at
+/// which the frame header starts. For a lossless (`xyb_encoded == false`)
+/// stream this is normally all-default: a single `1` bit. The opsin-inverse
+/// matrix is only serialized for XYB streams; custom upsampling weights are
+/// optional and always absent from the default.
+pub fn read_transform_data(
+  reader : @bitio.BitReader,
+  xyb_encoded : Bool
+) -> Unit raise @error.JxlError {
+  if @field.read_bool(reader) {
+    return
+  }
+  if xyb_encoded {
+    // OpsinInverseMatrix: a nested bundle of 16 half-floats (9 matrix entries,
+    // 3 opsin biases, 4 quant biases), itself prefixed by an all-default bit.
+    if !@field.read_bool(reader) {
+      let mut i = 0
+      while i < 16 {
+        let _ = @field.read_f16(reader)
+        i = i + 1
+      }
+    }
+  }
+  let custom_weights_mask = @field.read_bits(reader, 3)
+  if (custom_weights_mask & 1U) != 0U {
+    let mut i = 0
+    while i < 15 {
+      let _ = @field.read_f16(reader)
+      i = i + 1
+    }
+  }
+  if (custom_weights_mask & 2U) != 0U {
+    let mut i = 0
+    while i < 55 {
+      let _ = @field.read_f16(reader)
+      i = i + 1
+    }
+  }
+  if (custom_weights_mask & 4U) != 0U {
+    let mut i = 0
+    while i < 210 {
+      let _ = @field.read_f16(reader)
+      i = i + 1
+    }
+  }
+}
+
 /// Read the image metadata bundle.
 pub fn read_metadata(reader : @bitio.BitReader) -> Metadata raise @error.JxlError {
   if @field.read_bool(reader) {
@@ -250,6 +300,7 @@ pub fn read_metadata(reader : @bitio.BitReader) -> Metadata raise @error.JxlErro
   let mut intrinsic_size = { width: 0U, height: 0U }
   let mut preview_size = { width: 0U, height: 0U }
   let mut have_preview = false
+  let mut have_animation = false
   let mut animation = default_animation()
   if extra_fields {
     orientation = @field.read_bits(reader, 3) + 1U
@@ -260,7 +311,8 @@ pub fn read_metadata(reader : @bitio.BitReader) -> Metadata raise @error.JxlErro
     if have_preview {
       preview_size = read_preview_size(reader)
     }
-    if @field.read_bool(reader) {
+    have_animation = @field.read_bool(reader)
+    if have_animation {
       animation = read_animation(reader)
     }
   }
@@ -284,6 +336,7 @@ pub fn read_metadata(reader : @bitio.BitReader) -> Metadata raise @error.JxlErro
     intrinsic_size: intrinsic_size,
     preview_size: preview_size,
     have_preview: have_preview,
+    have_animation: have_animation,
     animation: animation,
     bit_depth: bit_depth,
     modular_16: modular_16,

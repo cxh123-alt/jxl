@@ -1,4 +1,5 @@
 import {
   "cxh123-alt/jxl/src/error" @error,
   "cxh123-alt/jxl/src/codestream" @codestream,
+  "cxh123-alt/jxl/src/modular" @modular,
 }

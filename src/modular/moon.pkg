@@ -1,0 +1,8 @@
+import {
+  "cxh123-alt/jxl/src/error" @error,
+  "cxh123-alt/jxl/src/bitio" @bitio,
+  "cxh123-alt/jxl/src/field" @field,
+  "cxh123-alt/jxl/src/entropy" @entropy,
+  "cxh123-alt/jxl/src/frame" @frame,
+  "cxh123-alt/jxl/src/codestream" @codestream,
+}
