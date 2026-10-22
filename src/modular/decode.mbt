@@ -11,6 +11,35 @@ pub struct RgbaImage {
   rgba : Array[Int]
 }
 
+/// Full-precision decoded image: RGBA samples at the codestream's native bit
+/// depth, before any quantization to 8 bits.
+///
+/// This is the precision-preserving output of the lossless Modular decode:
+/// for a 12-bit image every sample is an integer in `[0, 4095]`, recovered
+/// bit-exactly. `RgbaImage` is then a well-defined quantization of this.
+pub struct SampleImage {
+  width : Int
+  height : Int
+  /// Bit depth of the color channels (R/G/B).
+  bit_depth : Int
+  /// Bit depth of the alpha channel (equals `bit_depth` for uniform-depth
+  /// images; the alpha channel carries its own bit depth in JPEG XL).
+  alpha_bit_depth : Int
+  /// Row-major RGBA at native precision: R/G/B in
+  /// `[0, (1 << bit_depth) - 1]`, A in `[0, (1 << alpha_bit_depth) - 1]`
+  /// (A is `(1 << alpha_bit_depth) - 1` when the image has no alpha).
+  rgba : Array[Int]
+}
+
+/// The alpha channel's own bit depth, or the image bit depth when absent.
+fn alpha_bit_depth(metadata : @codestream.Metadata) -> Int {
+  if metadata.extra_channels.length() > 0 {
+    metadata.extra_channels[0].bit_depth.bits.reinterpret_as_int()
+  } else {
+    metadata.bit_depth.bits.reinterpret_as_int()
+  }
+}
+
 /// The modular image model produced by channel decoding (re-exported so the
 /// top-level `decode` API can hand the caller more than just RGBA).
 pub struct DecodedModular {
@@ -100,8 +129,9 @@ fn scale_to_8(value : Int, bitdepth : Int) -> Int {
   }
 }
 
-/// Convert a decoded (transform-undone) image into 8-bit RGBA.
-fn to_rgba(image : Image, header : @frame.FrameHeader, metadata : @codestream.Metadata) -> RgbaImage {
+/// Convert a decoded (transform-undone) image into full-precision RGBA
+/// samples at the native bit depth, with no quantization.
+fn to_samples(image : Image, header : @frame.FrameHeader, metadata : @codestream.Metadata) -> SampleImage {
   let nb_chans = nb_color_chans(header, metadata)
   let w = image.w
   let h = image.h
@@ -113,12 +143,13 @@ fn to_rgba(image : Image, header : @frame.FrameHeader, metadata : @codestream.Me
     i = i + 1
   }
   let color_bits = metadata.bit_depth.bits.reinterpret_as_int()
+  let alpha_bits = alpha_bit_depth(metadata)
   if nb_chans == 1 {
     // Grayscale: replicate the single color channel into R, G and B.
     let g = image.channel[0].plane
     let mut p = 0
     while p < num_pixels {
-      let v = scale_to_8(g[p], color_bits)
+      let v = g[p]
       rgba[p * 4] = v
       rgba[p * 4 + 1] = v
       rgba[p * 4 + 2] = v
@@ -130,9 +161,9 @@ fn to_rgba(image : Image, header : @frame.FrameHeader, metadata : @codestream.Me
     let b = image.channel[2].plane
     let mut p = 0
     while p < num_pixels {
-      rgba[p * 4] = scale_to_8(r[p], color_bits)
-      rgba[p * 4 + 1] = scale_to_8(g[p], color_bits)
-      rgba[p * 4 + 2] = scale_to_8(b[p], color_bits)
+      rgba[p * 4] = r[p]
+      rgba[p * 4 + 1] = g[p]
+      rgba[p * 4 + 2] = b[p]
       p = p + 1
     }
   }
@@ -141,23 +172,45 @@ fn to_rgba(image : Image, header : @frame.FrameHeader, metadata : @codestream.Me
     let a = image.channel[nb_chans].plane
     let mut p = 0
     while p < num_pixels {
-      rgba[p * 4 + 3] = scale_to_8(a[p], color_bits)
+      rgba[p * 4 + 3] = a[p]
       p = p + 1
     }
   } else {
+    let full = (1 << alpha_bits) - 1
     let mut p = 0
     while p < num_pixels {
-      rgba[p * 4 + 3] = 255
+      rgba[p * 4 + 3] = full
       p = p + 1
     }
   }
-  { width: w, height: h, rgba: rgba }
+  { width: w, height: h, bit_depth: color_bits, alpha_bit_depth: alpha_bits, rgba: rgba }
 }
 
-/// Decode a single-group, single-pass, lossless Modular codestream into 8-bit
-/// RGBA. The stream is a naked codestream (no container); wrap a container
-/// first if needed.
-pub fn decode_codestream(cs : Bytes) -> RgbaImage raise @error.JxlError {
+/// Quantize full-precision samples down to 8-bit RGBA, using each channel's
+/// own bit depth (color vs alpha).
+pub fn samples_to_rgba8(s : SampleImage) -> RgbaImage {
+  let num_pixels = s.width * s.height
+  let rgba : Array[Int] = []
+  let mut i = 0
+  while i < num_pixels * 4 {
+    rgba.push(0)
+    i = i + 1
+  }
+  let mut p = 0
+  while p < num_pixels {
+    rgba[p * 4] = scale_to_8(s.rgba[p * 4], s.bit_depth)
+    rgba[p * 4 + 1] = scale_to_8(s.rgba[p * 4 + 1], s.bit_depth)
+    rgba[p * 4 + 2] = scale_to_8(s.rgba[p * 4 + 2], s.bit_depth)
+    rgba[p * 4 + 3] = scale_to_8(s.rgba[p * 4 + 3], s.alpha_bit_depth)
+    p = p + 1
+  }
+  { width: s.width, height: s.height, rgba: rgba }
+}
+
+/// Decode a single-group, single-pass, lossless Modular codestream into
+/// full-precision RGBA samples at the native bit depth. The stream is a naked
+/// codestream (no container); wrap a container first if needed.
+pub fn decode_codestream_samples(cs : Bytes) -> SampleImage raise @error.JxlError {
   let reader = @bitio.BitReader::new(cs)
   if @field.read_bits(reader, 16) != 0x0AFFU {
     raise @error.JxlError::BadSignature
@@ -183,5 +236,12 @@ pub fn decode_codestream(cs : Bytes) -> RgbaImage raise @error.JxlError {
   // read sequentially from one reader positioned at the section data.
   let decoded = decode_global_info(reader, header, metadata, dims)
   undo_transforms(decoded.image, decoded.header.wp_header)
-  to_rgba(decoded.image, header, metadata)
+  to_samples(decoded.image, header, metadata)
+}
+
+/// Decode a single-group, single-pass, lossless Modular codestream into 8-bit
+/// RGBA. This is `samples_to_rgba8(decode_codestream_samples(cs))`: the
+/// full-precision reconstruction quantized to 8 bits.
+pub fn decode_codestream(cs : Bytes) -> RgbaImage raise @error.JxlError {
+  samples_to_rgba8(decode_codestream_samples(cs))
 }

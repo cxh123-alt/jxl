@@ -51,3 +51,11 @@ pub fn summary(data : Bytes) -> String raise @error.JxlError {
 pub fn decode(data : Bytes) -> @modular.RgbaImage raise @error.JxlError {
   @modular.decode_codestream(@codestream.codestream(data))
 }
+
+/// Decode a lossless Modular JPEG XL file into full-precision RGBA samples at
+/// the codestream's native bit depth (e.g. 12-bit alpha is recovered
+/// bit-exactly). Same coverage as `decode`; the 8-bit output is the
+/// quantization of this result via `@modular.samples_to_rgba8`.
+pub fn decode_samples(data : Bytes) -> @modular.SampleImage raise @error.JxlError {
+  @modular.decode_codestream_samples(@codestream.codestream(data))
+}

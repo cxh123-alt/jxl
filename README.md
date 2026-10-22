@@ -29,8 +29,11 @@ JavaScript, and WebAssembly.
   per-context entropy-code table reader (`DecodeANSCodes`).
 
 Lossless Modular sample reconstruction (single-group, single-pass frames) is
-implemented: `decode` turns a lossless Modular `.jxl` into flat 8-bit RGBA.
-VarDCT (lossy) reconstruction is not yet supported; see [Roadmap](#roadmap).
+implemented at two precision levels: `decode_samples` returns full-precision
+RGBA samples at the codestream's native bit depth (a 12-bit image is recovered
+bit-exactly, including 12-bit alpha), and `decode` quantizes those samples to
+flat 8-bit RGBA. VarDCT (lossy) reconstruction is not yet supported; see
+[Roadmap](#roadmap).
 
 ## Install
 
@@ -63,8 +66,21 @@ println(image.height)  // image height in pixels
 // 8-bit RGBA samples.
 ```
 
-`decode` supports single-group, single-pass, direct-RGB/grayscale lossless
-Modular frames; anything else raises `InvalidValue`.
+For the precision-preserving path, `decode_samples` returns the samples before
+any quantization:
+
+```moonbit
+let s = @jxl.decode_samples(bytes)
+println(s.bit_depth)        // native color bit depth, e.g. 12
+println(s.alpha_bit_depth)  // native alpha bit depth, e.g. 12
+// s.rgba holds full-precision samples: R/G/B in [0, (1 << bit_depth) - 1],
+// A in [0, (1 << alpha_bit_depth) - 1]. `decode` is
+// `samples_to_rgba8(decode_samples(bytes))`.
+```
+
+`decode` and `decode_samples` support single-group, single-pass,
+direct-RGB/grayscale lossless Modular frames; anything else raises
+`InvalidValue`.
 
 A runnable demo that decodes several embedded streams is included:
 
@@ -76,7 +92,7 @@ moon run demo
 
 | Package | Purpose |
 | --- | --- |
-| `cxh123-alt/jxl` | Public entry points (`info`, `summary`, `decode`) |
+| `cxh123-alt/jxl` | Public entry points (`info`, `summary`, `decode`, `decode_samples`) |
 | `cxh123-alt/jxl/src/error` | Error type |
 | `cxh123-alt/jxl/src/bitio` | LSB-first bit reader |
 | `cxh123-alt/jxl/src/field` | Bundle field codecs |
